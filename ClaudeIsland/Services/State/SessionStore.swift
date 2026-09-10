@@ -149,7 +149,20 @@ actor SessionStore {
 
         let newPhase = event.determinePhase()
 
-        if session.phase.canTransition(to: newPhase) {
+        // A turn only resumes on a user prompt or a fresh tool call. Every other
+        // event that maps to .processing (the PostToolUse of a backgrounded Bash,
+        // a SubagentStop) can land *after* Stop and would otherwise drag an idle
+        // session back into .processing for good: the periodic status check then
+        // re-syncs it every 3s and the notch never stops animating.
+        let resumesTurn = event.event == "UserPromptSubmit" || event.event == "PreToolUse"
+        var isLateProcessingEvent = false
+        if case .waitingForInput = session.phase, case .processing = newPhase, !resumesTurn {
+            isLateProcessingEvent = true
+        }
+
+        if isLateProcessingEvent {
+            Self.logger.debug("Ignoring late \(event.event, privacy: .public) on an idle session, staying in waitingForInput")
+        } else if session.phase.canTransition(to: newPhase) {
             session.phase = newPhase
         } else {
             Self.logger.debug("Invalid transition: \(String(describing: session.phase), privacy: .public) -> \(String(describing: newPhase), privacy: .public), ignoring")
