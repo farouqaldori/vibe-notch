@@ -24,6 +24,7 @@ struct ChatView: View {
     @State private var newMessageCount: Int = 0
     @State private var previousHistoryCount: Int = 0
     @State private var isBottomVisible: Bool = true
+    @State private var messagingSupport: TerminalMessageSender.Support = .unavailable
     @FocusState private var isInputFocused: Bool
 
     init(sessionId: String, initialSession: SessionState, sessionMonitor: ClaudeSessionMonitor, viewModel: NotchViewModel) {
@@ -353,14 +354,58 @@ struct ChatView: View {
 
     // MARK: - Input Bar
 
-    /// Can send messages only if session is in tmux
+    /// Can send messages if the session runs in tmux, Terminal.app or iTerm2
     private var canSendMessages: Bool {
-        session.isInTmux && session.tty != nil
+        messagingSupport == .available
+    }
+
+    /// Cache keyed on what decides the route, so `ps` does not run on every redraw
+    private var messagingSupportKey: String {
+        "\(session.pid ?? 0)-\(session.tty ?? "")-\(session.isInTmux)"
     }
 
     private var inputBar: some View {
+        Group {
+            if messagingSupport == .claudeDesktop {
+                openInClaudeBar
+            } else {
+                messageField
+            }
+        }
+        .task(id: messagingSupportKey) {
+            let snapshot = session
+            messagingSupport = await Task.detached { TerminalMessageSender.support(for: snapshot) }.value
+        }
+    }
+
+    /// Sessions started by the Claude desktop app have no terminal to type into
+    private var openInClaudeBar: some View {
         HStack(spacing: 10) {
-            TextField(canSendMessages ? "Message Claude..." : "Open Claude Code in tmux to enable messaging", text: $inputText)
+            Text("This session runs in the Claude app")
+                .font(.system(size: 13))
+                .foregroundColor(.white.opacity(0.5))
+            Spacer()
+            Button {
+                TerminalMessageSender.openClaudeDesktop()
+            } label: {
+                Text("Open in Claude")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color.white.opacity(0.95)))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.black.opacity(0.2))
+        .zIndex(1)
+    }
+
+    private var messageField: some View {
+        HStack(spacing: 10) {
+            TextField(canSendMessages ? "Message Claude..." : "Messaging works in Terminal, iTerm2 or tmux", text: $inputText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundColor(canSendMessages ? .white : .white.opacity(0.4))
@@ -479,42 +524,7 @@ struct ChatView: View {
     }
 
     private func sendToSession(_ text: String) async {
-        guard session.isInTmux else { return }
-        guard let tty = session.tty else { return }
-
-        if let target = await findTmuxTarget(tty: tty) {
-            _ = await ToolApprovalHandler.shared.sendMessage(text, to: target)
-        }
-    }
-
-    private func findTmuxTarget(tty: String) async -> TmuxTarget? {
-        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
-            return nil
-        }
-
-        do {
-            let output = try await ProcessExecutor.shared.run(
-                tmuxPath,
-                arguments: ["list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index} #{pane_tty}"]
-            )
-
-            let lines = output.components(separatedBy: "\n")
-            for line in lines {
-                let parts = line.components(separatedBy: " ")
-                guard parts.count >= 2 else { continue }
-
-                let target = parts[0]
-                let paneTty = parts[1].replacingOccurrences(of: "/dev/", with: "")
-
-                if paneTty == tty {
-                    return TmuxTarget(from: target)
-                }
-            }
-        } catch {
-            return nil
-        }
-
-        return nil
+        _ = await TerminalMessageSender.shared.send(text, to: session)
     }
 }
 

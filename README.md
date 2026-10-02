@@ -23,6 +23,7 @@
 - **Notch UI** — Animated overlay that expands from the MacBook notch
 - **Live Session Monitoring** — Track multiple Claude Code sessions in real-time
 - **Permission Approvals** — Approve or deny tool executions directly from the notch
+- **Send Messages** — Type to Claude Code from the notch (Terminal.app, iTerm2 or tmux)
 - **Chat History** — View full conversation history with markdown rendering
 - **Auto-Setup** — Hooks install automatically on first launch
 

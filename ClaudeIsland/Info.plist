@@ -14,6 +14,8 @@
     <string>$(MARKETING_VERSION)</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Vibe Notch sends your messages to the Terminal or iTerm2 window running Claude Code.</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright 2025. All rights reserved.</string>
 
