@@ -535,6 +535,26 @@ actor ConversationParser {
         return nested
     }
 
+    /// Flatten a tool_use input to strings. Arrays and objects are kept as JSON text
+    /// rather than dropped (e.g. the suggested replies in a next-step prompt).
+    nonisolated static func stringifyToolInput(_ inputDict: [String: Any]?) -> [String: String] {
+        var input: [String: String] = [:]
+        for (key, value) in inputDict ?? [:] {
+            if let strValue = value as? String {
+                input[key] = strValue
+            } else if let intValue = value as? Int {
+                input[key] = String(intValue)
+            } else if let boolValue = value as? Bool {
+                input[key] = boolValue ? "true" : "false"
+            } else if JSONSerialization.isValidJSONObject(value),
+                      let data = try? JSONSerialization.data(withJSONObject: value),
+                      let json = String(data: data, encoding: .utf8) {
+                input[key] = json
+            }
+        }
+        return input
+    }
+
     private func parseMessageLine(_ json: [String: Any], seenToolIds: inout Set<String>, toolIdToName: inout [String: String]) -> ChatMessage? {
         guard let type = json["type"] as? String,
               let uuid = json["uuid"] as? String else {
@@ -632,18 +652,7 @@ actor ConversationParser {
             return nil
         }
 
-        var input: [String: String] = [:]
-        if let inputDict = block["input"] as? [String: Any] {
-            for (key, value) in inputDict {
-                if let strValue = value as? String {
-                    input[key] = strValue
-                } else if let intValue = value as? Int {
-                    input[key] = String(intValue)
-                } else if let boolValue = value as? Bool {
-                    input[key] = boolValue ? "true" : "false"
-                }
-            }
-        }
+        let input = Self.stringifyToolInput(block["input"] as? [String: Any])
 
         return ToolUseBlock(id: id, name: name, input: input)
     }
@@ -1010,18 +1019,7 @@ actor ConversationParser {
 
                 seenToolIds.insert(toolId)
 
-                var input: [String: String] = [:]
-                if let inputDict = block["input"] as? [String: Any] {
-                    for (key, value) in inputDict {
-                        if let strValue = value as? String {
-                            input[key] = strValue
-                        } else if let intValue = value as? Int {
-                            input[key] = String(intValue)
-                        } else if let boolValue = value as? Bool {
-                            input[key] = boolValue ? "true" : "false"
-                        }
-                    }
-                }
+                let input = Self.stringifyToolInput(block["input"] as? [String: Any])
 
                 let isCompleted = completedToolIds.contains(toolId)
                 let timestamp = json["timestamp"] as? String
@@ -1102,18 +1100,7 @@ extension ConversationParser {
 
                 seenToolIds.insert(toolId)
 
-                var input: [String: String] = [:]
-                if let inputDict = block["input"] as? [String: Any] {
-                    for (key, value) in inputDict {
-                        if let strValue = value as? String {
-                            input[key] = strValue
-                        } else if let intValue = value as? Int {
-                            input[key] = String(intValue)
-                        } else if let boolValue = value as? Bool {
-                            input[key] = boolValue ? "true" : "false"
-                        }
-                    }
-                }
+                let input = Self.stringifyToolInput(block["input"] as? [String: Any])
 
                 let isCompleted = completedToolIds.contains(toolId)
                 let timestamp = json["timestamp"] as? String

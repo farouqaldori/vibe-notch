@@ -45,6 +45,8 @@ class NotchViewModel: ObservableObject {
     @Published var openReason: NotchOpenReason = .unknown
     @Published var contentType: NotchContentType = .instances
     @Published var isHovering: Bool = false
+    /// Number of sessions on the multiplex wall (drives the opened panel size)
+    @Published var multiplexCount: Int = 0
 
     // MARK: - Dependencies
 
@@ -83,9 +85,13 @@ class NotchViewModel: ObservableObject {
                     + claudeDirSelector.expandedPickerHeight
             )
         case .instances:
+            // Multiplex wall grows with the number of sessions (scrolls past 3 rows)
+            guard multiplexCount > 0 else {
+                return CGSize(width: min(screenRect.width * 0.4, 480), height: 220)
+            }
             return CGSize(
-                width: min(screenRect.width * 0.4, 480),
-                height: 320
+                width: min(screenRect.width * 0.6, MultiplexLayout.panelWidth(for: multiplexCount)),
+                height: MultiplexLayout.gridHeight(for: multiplexCount) + 84
             )
         }
     }

@@ -10,6 +10,7 @@ import SwiftUI
 struct TerminalColors {
     static let green = Color(red: 0.4, green: 0.75, blue: 0.45)
     static let amber = Color(red: 1.0, green: 0.7, blue: 0.0)
+    static let yellow = Color(red: 1.0, green: 0.84, blue: 0.04)
     static let red = Color(red: 1.0, green: 0.3, blue: 0.3)
     static let cyan = Color(red: 0.0, green: 0.8, blue: 0.8)
     static let blue = Color(red: 0.4, green: 0.6, blue: 1.0)

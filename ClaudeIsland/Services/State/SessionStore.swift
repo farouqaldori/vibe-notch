@@ -36,6 +36,9 @@ actor SessionStore {
     /// Status check interval (3 seconds)
     private let statusCheckIntervalSeconds: UInt64 = 3
 
+    /// Sessions the user archived; registry discovery skips them
+    private var dismissedSessionIds: Set<String> = []
+
     // MARK: - Published State (for UI)
 
     /// Publisher for session state changes (nonisolated for Combine subscription from any context)
@@ -928,6 +931,8 @@ actor SessionStore {
     private func processSessionEnd(sessionId: String) async {
         sessions.removeValue(forKey: sessionId)
         cancelPendingSync(sessionId: sessionId)
+        // Archived by the user — don't resurrect it from the running-session registry
+        dismissedSessionIds.insert(sessionId)
     }
 
     // MARK: - History Loading
@@ -1050,6 +1055,8 @@ actor SessionStore {
     func startPeriodicStatusCheck() {
         guard statusCheckTask == nil else { return }
 
+        discoverRunningSessions()
+
         let intervalSeconds = statusCheckIntervalSeconds
         statusCheckTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -1070,6 +1077,8 @@ actor SessionStore {
 
     /// Recheck status of all active sessions
     private func recheckAllSessions() {
+        discoverRunningSessions()
+
         var removedSession = false
 
         for (sessionId, session) in Array(sessions) {
@@ -1106,6 +1115,95 @@ actor SessionStore {
         if removedSession {
             publishState()
         }
+    }
+
+    // MARK: - Running Session Discovery
+
+    /// Entry Claude Code writes to <claude dir>/sessions/<pid>.json for each live process
+    private struct SessionRegistryEntry: Decodable {
+        let pid: Int
+        let sessionId: String
+        let cwd: String
+        let status: String?
+        let startedAt: Double?
+        let statusUpdatedAt: Double?
+    }
+
+    /// Hooks only announce a session once it does something, so sessions that were
+    /// already running when the app launched (or went quiet) never show up. Pick them
+    /// up from Claude Code's own registry of live processes instead.
+    private func discoverRunningSessions() {
+        let registryDir = ClaudePaths.claudeDir.appendingPathComponent("sessions")
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: registryDir,
+            includingPropertiesForKeys: nil
+        ) else { return }
+
+        var tree: [Int: ProcessInfo]?
+        var changed = false
+
+        for file in files where file.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: file),
+                  let entry = try? JSONDecoder().decode(SessionRegistryEntry.self, from: data),
+                  !dismissedSessionIds.contains(entry.sessionId) else { continue }
+
+            if var existing = sessions[entry.sessionId] {
+                if reconcilePhase(of: &existing, with: entry) {
+                    sessions[entry.sessionId] = existing
+                    scheduleFileSync(sessionId: existing.sessionId, cwd: existing.cwd)
+                    changed = true
+                }
+                continue
+            }
+
+            guard isProcessRunning(pid: entry.pid) else { continue }
+
+            let processTree = tree ?? ProcessTreeBuilder.shared.buildTree()
+            tree = processTree
+
+            let startedAt = entry.startedAt.map { Date(timeIntervalSince1970: $0 / 1000) } ?? Date()
+            sessions[entry.sessionId] = SessionState(
+                sessionId: entry.sessionId,
+                cwd: entry.cwd,
+                pid: entry.pid,
+                tty: processTree[entry.pid]?.tty,
+                isInTmux: ProcessTreeBuilder.shared.isInTmux(pid: entry.pid, tree: processTree),
+                phase: entry.status == "busy" ? .processing : .idle,
+                lastActivity: startedAt,
+                createdAt: startedAt
+            )
+            changed = true
+            Self.logger.info("Discovered running session \(entry.sessionId.prefix(8), privacy: .public) (pid \(entry.pid))")
+        }
+
+        if changed {
+            publishState()
+        }
+    }
+
+    /// Correct a phase that hooks left stale (e.g. a missed Stop leaves a session
+    /// "processing" forever). Only trusts the registry when its status changed after
+    /// the last hook we saw, so a fresh hook always wins.
+    private func reconcilePhase(of session: inout SessionState, with entry: SessionRegistryEntry) -> Bool {
+        guard let updatedAtMs = entry.statusUpdatedAt,
+              Date(timeIntervalSince1970: updatedAtMs / 1000) > session.lastActivity else { return false }
+
+        let target: SessionPhase
+        switch (entry.status, session.phase) {
+        case ("idle", .processing), ("idle", .compacting):
+            target = .waitingForInput
+        case ("busy", .idle), ("busy", .waitingForInput):
+            target = .processing
+        default:
+            return false
+        }
+
+        guard session.phase.canTransition(to: target) else { return false }
+        let shortId = String(session.sessionId.prefix(8))
+        let from = String(describing: session.phase)
+        Self.logger.info("Registry reconciled \(shortId, privacy: .public): \(from, privacy: .public) -> \(String(describing: target), privacy: .public)")
+        session.phase = target
+        return true
     }
 
     /// Check if a process is still running

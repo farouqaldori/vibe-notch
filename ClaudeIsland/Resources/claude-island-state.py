@@ -152,10 +152,16 @@ def main():
 
             if decision == "allow":
                 # Output JSON to approve
+                allow = {"behavior": "allow"}
+                # The app can rewrite the tool input, e.g. to answer an
+                # AskUserQuestion from the notch by filling in "answers"
+                updated_input = response.get("updated_input")
+                if updated_input:
+                    allow["updatedInput"] = updated_input
                 output = {
                     "hookSpecificOutput": {
                         "hookEventName": "PermissionRequest",
-                        "decision": {"behavior": "allow"},
+                        "decision": allow,
                     }
                 }
                 print(json.dumps(output))

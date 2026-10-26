@@ -51,6 +51,11 @@ struct ChatView: View {
         session.phase.approvalToolName
     }
 
+    /// Questions Claude is asking, when the pending tool is AskUserQuestion
+    private var pendingQuestions: [PendingQuestion] {
+        PendingQuestion.parse(session.activePermission?.toolInput)
+    }
+
     
     var body: some View {
         ZStack {
@@ -69,8 +74,23 @@ struct ChatView: View {
 
                 // Approval bar, interactive prompt, or Input bar
                 if let tool = approvalTool {
-                    if tool == "AskUserQuestion" {
-                        // Interactive tools - show prompt to answer in terminal
+                    if tool == "AskUserQuestion", !pendingQuestions.isEmpty {
+                        // Answer Claude's question right here, recommended option highlighted
+                        QuestionAnswerBar(
+                            questions: pendingQuestions,
+                            isInTmux: session.isInTmux,
+                            onAnswer: { answers in
+                                sessionMonitor.answerQuestion(sessionId: sessionId, answers: answers)
+                            },
+                            onGoToTerminal: { focusTerminal() }
+                        )
+                        .id(session.pendingToolId)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .bottom)),
+                            removal: .opacity
+                        ))
+                    } else if tool == "AskUserQuestion" {
+                        // Couldn't read the question - fall back to answering in terminal
                         interactivePromptBar
                             .transition(.asymmetric(
                                 insertion: .opacity.combined(with: .move(edge: .bottom)),
@@ -84,8 +104,16 @@ struct ChatView: View {
                             ))
                     }
                 } else {
-                    inputBar
-                        .transition(.opacity)
+                    VStack(spacing: 0) {
+                        if let prompt = session.turnPrompt {
+                            TurnPromptBar(prompt: prompt, canSend: canSendMessages) { suggestion in
+                                sendSuggestion(suggestion)
+                            }
+                            .transition(.opacity)
+                        }
+                        inputBar
+                    }
+                    .transition(.opacity)
                 }
             }
         }
@@ -460,6 +488,17 @@ struct ChatView: View {
 
     private func denyPermission() {
         sessionMonitor.denyPermission(sessionId: sessionId, reason: nil)
+    }
+
+    /// Send one of Claude's suggested replies, or copy it when we can't type into the session
+    private func sendSuggestion(_ suggestion: TurnPrompt.Suggestion) {
+        guard canSendMessages else {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(suggestion.message, forType: .string)
+            return
+        }
+        inputText = suggestion.message
+        sendMessage()
     }
 
     private func sendMessage() {

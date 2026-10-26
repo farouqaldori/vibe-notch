@@ -121,6 +121,32 @@ class ClaudeSessionMonitor: ObservableObject {
         }
     }
 
+    /// Answer a pending AskUserQuestion from the notch. Claude Code accepts the
+    /// answers through the tool's `answers` input (question text -> chosen label),
+    /// so we approve the call with that field filled in.
+    func answerQuestion(sessionId: String, answers: [String: String]) {
+        Task {
+            guard let session = await SessionStore.shared.session(for: sessionId),
+                  let permission = session.activePermission,
+                  permission.toolName == "AskUserQuestion" else {
+                return
+            }
+
+            var updatedInput = permission.toolInput ?? [:]
+            updatedInput["answers"] = AnyCodable(answers)
+
+            HookSocketServer.shared.respondToPermission(
+                toolUseId: permission.toolUseId,
+                decision: "allow",
+                updatedInput: updatedInput
+            )
+
+            await SessionStore.shared.process(
+                .permissionApproved(sessionId: sessionId, toolUseId: permission.toolUseId)
+            )
+        }
+    }
+
     /// Archive (remove) a session from the instances list
     func archiveSession(sessionId: String) {
         Task {

@@ -86,6 +86,13 @@ struct HookEvent: Codable, Sendable {
 struct HookResponse: Codable {
     let decision: String // "allow", "deny", or "ask"
     let reason: String?
+    /// Replacement tool input sent back with an "allow" (e.g. AskUserQuestion answers)
+    let updatedInput: [String: AnyCodable]?
+
+    enum CodingKeys: String, CodingKey {
+        case decision, reason
+        case updatedInput = "updated_input"
+    }
 }
 
 /// Pending permission request waiting for user decision
@@ -213,9 +220,9 @@ class HookSocketServer {
     }
 
     /// Respond to a pending permission request by toolUseId
-    func respondToPermission(toolUseId: String, decision: String, reason: String? = nil) {
+    func respondToPermission(toolUseId: String, decision: String, reason: String? = nil, updatedInput: [String: AnyCodable]? = nil) {
         queue.async { [weak self] in
-            self?.sendPermissionResponse(toolUseId: toolUseId, decision: decision, reason: reason)
+            self?.sendPermissionResponse(toolUseId: toolUseId, decision: decision, reason: reason, updatedInput: updatedInput)
         }
     }
 
@@ -470,7 +477,7 @@ class HookSocketServer {
         eventHandler?(event)
     }
 
-    private func sendPermissionResponse(toolUseId: String, decision: String, reason: String?) {
+    private func sendPermissionResponse(toolUseId: String, decision: String, reason: String?, updatedInput: [String: AnyCodable]? = nil) {
         permissionsLock.lock()
         guard let pending = pendingPermissions.removeValue(forKey: toolUseId) else {
             permissionsLock.unlock()
@@ -479,7 +486,7 @@ class HookSocketServer {
         }
         permissionsLock.unlock()
 
-        let response = HookResponse(decision: decision, reason: reason)
+        let response = HookResponse(decision: decision, reason: reason, updatedInput: updatedInput)
         guard let data = try? JSONEncoder().encode(response) else {
             close(pending.clientSocket)
             return
@@ -520,7 +527,7 @@ class HookSocketServer {
         pendingPermissions.removeValue(forKey: pending.toolUseId)
         permissionsLock.unlock()
 
-        let response = HookResponse(decision: decision, reason: reason)
+        let response = HookResponse(decision: decision, reason: reason, updatedInput: nil)
         guard let data = try? JSONEncoder().encode(response) else {
             close(pending.clientSocket)
             permissionFailureHandler?(sessionId, pending.toolUseId)
