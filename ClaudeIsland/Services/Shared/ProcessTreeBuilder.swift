@@ -71,6 +71,25 @@ struct ProcessTreeBuilder: Sendable {
         return false
     }
 
+    /// Check if a process is a descendant of the Claude desktop app
+    nonisolated func isInClaudeDesktop(pid: Int, tree: [Int: ProcessInfo]) -> Bool {
+        var current = pid
+        var depth = 0
+
+        while current > 1 && depth < 20 {
+            guard let info = tree[current] else { break }
+            let command = info.command.lowercased()
+            if command.contains("claude.app/contents/macos/claude") ||
+                command.contains("claudefordesktop") {
+                return true
+            }
+            current = info.ppid
+            depth += 1
+        }
+
+        return false
+    }
+
     /// Walk up the process tree to find the terminal app PID
     nonisolated func findTerminalPid(forProcess pid: Int, tree: [Int: ProcessInfo]) -> Int? {
         var current = pid
