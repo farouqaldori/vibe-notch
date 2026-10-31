@@ -15,6 +15,8 @@ private let logger = Logger(subsystem: "com.claudeisland", category: "Hooks")
 /// Event received from Claude Code hooks
 struct HookEvent: Codable, Sendable {
     let sessionId: String
+    /// Session ID used by the Claude desktop app (`local_<uuid>`), if any.
+    let hostSessionId: String?
     let cwd: String
     let event: String
     let status: String
@@ -28,6 +30,7 @@ struct HookEvent: Codable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
+        case hostSessionId = "host_session_id"
         case cwd, event, status, pid, tty, tool
         case toolInput = "tool_input"
         case toolUseId = "tool_use_id"
@@ -36,8 +39,9 @@ struct HookEvent: Codable, Sendable {
     }
 
     /// Create a copy with updated toolUseId
-    init(sessionId: String, cwd: String, event: String, status: String, pid: Int?, tty: String?, tool: String?, toolInput: [String: AnyCodable]?, toolUseId: String?, notificationType: String?, message: String?) {
+    init(sessionId: String, hostSessionId: String? = nil, cwd: String, event: String, status: String, pid: Int?, tty: String?, tool: String?, toolInput: [String: AnyCodable]?, toolUseId: String?, notificationType: String?, message: String?) {
         self.sessionId = sessionId
+        self.hostSessionId = hostSessionId
         self.cwd = cwd
         self.event = event
         self.status = status
@@ -438,6 +442,7 @@ class HookSocketServer {
 
             let updatedEvent = HookEvent(
                 sessionId: event.sessionId,
+                hostSessionId: event.hostSessionId,
                 cwd: event.cwd,
                 event: event.event,
                 status: event.status,

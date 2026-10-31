@@ -132,12 +132,21 @@ actor SessionStore {
         }
 
         session.pid = event.pid
+        if let hostSessionId = event.hostSessionId, !hostSessionId.isEmpty {
+            session.hostSessionId = hostSessionId
+        }
         if let pid = event.pid {
             let tree = ProcessTreeBuilder.shared.buildTree()
             session.isInTmux = ProcessTreeBuilder.shared.isInTmux(pid: pid, tree: tree)
+            session.isInDesktopApp = ProcessTreeBuilder.shared.isInClaudeDesktop(pid: pid, tree: tree)
         }
         if let tty = event.tty {
             session.tty = tty.replacingOccurrences(of: "/dev/", with: "")
+        }
+        // Desktop sessions have no tty; use that as a fallback when the
+        // process tree is unavailable or the app is not an ancestor.
+        if !session.isInTmux && !session.isInDesktopApp && event.tty == nil {
+            session.isInDesktopApp = true
         }
         session.lastActivity = Date()
 

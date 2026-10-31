@@ -22,6 +22,10 @@ struct SessionState: Equatable, Identifiable, Sendable {
     var pid: Int?
     var tty: String?
     var isInTmux: Bool
+    /// True when the session runs inside the Claude desktop app rather than a terminal.
+    var isInDesktopApp: Bool = false
+    /// The desktop app's own session ID (`local_<uuid>`), when it launched this session.
+    var hostSessionId: String?
 
     // MARK: - State Machine
 

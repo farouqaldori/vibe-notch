@@ -88,15 +88,10 @@ struct ClaudeInstancesView: View {
     // MARK: - Actions
 
     private func focusSession(_ session: SessionState) {
-        guard session.isInTmux else { return }
+        guard session.isInTmux || session.isInDesktopApp else { return }
 
-        Task {
-            if let pid = session.pid {
-                _ = await YabaiController.shared.focusWindow(forClaudePid: pid)
-            } else {
-                _ = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd)
-            }
-        }
+        viewModel.notchClose()
+        SessionFocusService.focus(session)
     }
 
     private func openChat(_ session: SessionState) {
@@ -267,10 +262,10 @@ struct InstanceRow: View {
                         onChat()
                     }
 
-                    // Go to Terminal button (only if yabai available)
-                    if isYabaiAvailable {
+                    // Go to Terminal button (tmux/yabai or Claude desktop)
+                    if isYabaiAvailable || session.isInDesktopApp {
                         TerminalButton(
-                            isEnabled: session.isInTmux,
+                            isEnabled: session.isInTmux || session.isInDesktopApp,
                             onTap: { onFocus() }
                         )
                     }
@@ -290,8 +285,8 @@ struct InstanceRow: View {
                         onChat()
                     }
 
-                    // Focus icon (only for tmux instances with yabai)
-                    if session.isInTmux && isYabaiAvailable {
+                    // Focus icon (tmux instances with yabai, or Claude desktop sessions)
+                    if (session.isInTmux && isYabaiAvailable) || session.isInDesktopApp {
                         IconButton(icon: "eye") {
                             onFocus()
                         }
@@ -311,8 +306,8 @@ struct InstanceRow: View {
         .padding(.trailing, 14)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
-            onChat()
+        .onTapGesture {
+            onFocus()
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isWaitingForApproval)
         .background(
