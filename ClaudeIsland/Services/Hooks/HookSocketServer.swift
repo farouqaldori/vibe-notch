@@ -417,7 +417,14 @@ class HookSocketServer {
             cacheToolUseId(event: event)
         }
 
-        if event.event == "SessionEnd" {
+        // The cache key embeds the full tool input, which for Write/Edit can be
+        // hundreds of KB. Drop the entry once the tool finishes so it only lives
+        // while the call is in flight instead of growing for days.
+        if event.event == "PostToolUse" || event.event == "PostToolUseFailure" || event.event == "PermissionDenied" {
+            _ = popCachedToolUseId(event: event)
+        }
+
+        if event.event == "SessionEnd" || event.event == "Stop" || event.event == "StopFailure" {
             cleanupCache(sessionId: event.sessionId)
         }
 

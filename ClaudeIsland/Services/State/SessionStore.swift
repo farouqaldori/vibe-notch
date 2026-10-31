@@ -144,6 +144,7 @@ actor SessionStore {
         if event.status == "ended" {
             sessions.removeValue(forKey: sessionId)
             cancelPendingSync(sessionId: sessionId)
+            await ConversationParser.shared.resetState(for: sessionId)
             return
         }
 
@@ -928,6 +929,7 @@ actor SessionStore {
     private func processSessionEnd(sessionId: String) async {
         sessions.removeValue(forKey: sessionId)
         cancelPendingSync(sessionId: sessionId)
+        await ConversationParser.shared.resetState(for: sessionId)
     }
 
     // MARK: - History Loading
@@ -1069,13 +1071,14 @@ actor SessionStore {
     }
 
     /// Recheck status of all active sessions
-    private func recheckAllSessions() {
+    private func recheckAllSessions() async {
         var removedSession = false
 
         for (sessionId, session) in Array(sessions) {
             if session.phase == .ended {
                 sessions.removeValue(forKey: sessionId)
                 cancelPendingSync(sessionId: sessionId)
+                await ConversationParser.shared.resetState(for: sessionId)
                 removedSession = true
                 continue
             }
@@ -1086,6 +1089,7 @@ actor SessionStore {
                     Self.logger.info("Process \(pid) no longer running, ending session \(sessionId.prefix(8))")
                     sessions.removeValue(forKey: sessionId)
                     cancelPendingSync(sessionId: sessionId)
+                    await ConversationParser.shared.resetState(for: sessionId)
                     removedSession = true
                     continue
                 }
