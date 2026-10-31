@@ -93,9 +93,11 @@ class NotchPanel: NSPanel {
     }
 
     private func repostMouseEvent(_ event: NSEvent, at screenLocation: NSPoint) {
-        // Convert to CGEvent coordinate system (Y from top of screen)
-        guard let screen = NSScreen.main else { return }
-        let screenHeight = screen.frame.height
+        // CGEvent global coordinates start at the top-left of the primary
+        // display, so the flip must use the primary screen's height — not
+        // NSScreen.main, which follows the key window and may be another screen.
+        guard let primaryScreen = NSScreen.screens.first else { return }
+        let screenHeight = primaryScreen.frame.height
         let cgPoint = CGPoint(x: screenLocation.x, y: screenHeight - screenLocation.y)
 
         let mouseType: CGEventType
